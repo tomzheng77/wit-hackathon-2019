@@ -1,0 +1,12 @@
+language: node_js
+env: TRAVIS_CI=true
+node_js:
+  - "6.11.1"
+  - "7.2.0"
+  - "8.0.0"
+dist: xenial
+services:
+  - xvfb
+script:
+  - yarn run dev:test
+  - yarn run build

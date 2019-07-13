@@ -1,0 +1,153 @@
+{#
+  Nunjucks Templating!
+  Homepage: https://mozilla.github.io/nunjucks/
+  Docs: https://mozilla.github.io/nunjucks/api.html
+#}
+
+{% extends 'layouts/application.html' %}
+{% block title %}seesaw{% endblock %}
+
+{% block content %}
+<input onclick='responsiveVoice.speak("Hello World");' type='button' value='🔊 Play' />
+<button class="capture-button">Capture video</button>
+<button class="torch-button">Torch</button><br>
+<canvas width="640" height="480"></canvas>
+<img src="" width="640" height="480" alt="">
+<video width="640" height="480" autoplay style="opacity: 0"></video>
+<canvas id="video-to-image" width="640" height="480" style="opacity: 0"></canvas>
+
+<script src="https://code.responsivevoice.org/responsivevoice.js?key=Ml8hCnaf"></script>
+<script>
+
+const constraints = {
+  video: { facingMode: { exact: "environment" } }
+};
+
+const captureVideoButton = document.querySelector('.capture-button');
+const torchButton = document.querySelector('.torch-button');
+const video = document.querySelector('video');
+const canvas = document.querySelector('canvas');
+const image = document.querySelector('img');
+const videoToImage = document.querySelector('#video-to-image');
+
+var response = []
+var iter = 0
+canvas.onclick = function(event) {
+    var x = event.offsetX;
+    var y = event.offsetY;
+    var seen = {};
+    var items = [];
+    for (var i = 0; i < response.length; i++) {
+      var item = response[i];
+      var points = item['box_points'];
+      var x1 = points[0];
+      var y1 = points[1];
+      var x2 = points[2];
+      var y2 = points[3];
+      if (x >= x1 && x <= x2 && y >= y1 && y <= y2) {
+        if (!(item['name'] in seen)) {
+          seen[item['name']] = true;
+          items.push(item['name']);
+        }
+      }
+    }
+    if (items.length == 0) {
+      responsiveVoice.speak("I don't see anything");
+    } else {
+      var string = "I see ";
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        if (items.length > 1 && i == items.length - 1) {
+          string += 'and '
+        }
+        string += 'a ' + item + ', ';
+      }
+      responsiveVoice.speak(string);
+    }
+}
+
+captureVideoButton.onclick = function() {
+  navigator.mediaDevices.getUserMedia(constraints).
+    then(stream => {
+      handleSuccess(stream);
+      // example
+      setInterval(() => {
+        screenshot(video);
+      }, 1000);
+    }).catch(handleError);
+};
+
+var track = null
+var capabilities = null
+var torchOn = false
+torchButton.onclick = function() {
+  if (track != null && capabilities != null) {
+    torchOn = !torchOn
+    if (capabilities.torch) {
+      track.applyConstraints({
+        advanced: [{torch: torchOn}]
+      }).catch(e => console.log(e));
+    }
+  }
+}
+
+function handleSuccess(stream) {
+  video.srcObject = stream;
+  track = stream.getVideoTracks()[0];
+  video.onloadedmetadata = function() {
+    setTimeout(function() {
+      capabilities = track.getCapabilities();
+    }, 1000);
+  }
+}
+
+var ctx1 = videoToImage.getContext("2d");
+var ctx = canvas.getContext("2d");
+
+function screenshot(video) {
+  videoToImage.width = video.videoWidth;
+  videoToImage.height = video.videoHeight;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx1.drawImage(video, 0, 0);
+  ctx.drawImage(video, 0, 0);
+  for (var i = 0; i < response.length; i++) {
+    var item = response[i];
+    // console.log(item['name']);
+    // console.log(item['percentage_probability']);
+    // console.log(item['box_points']);
+    var points = item['box_points'];
+    ctx.fillStyle = "#00FF00";
+    ctx.strokeStyle = "#00FF00";
+    ctx.lineWidth = 2;
+    ctx.font = "24px Arial";
+    ctx.fillText(item['name'], points[0], points[1] - 14);
+    ctx.strokeRect(points[0], points[1], points[2]-points[0], points[3]-points[1]);
+  }
+
+  // use image/webp?
+  var dataURL = videoToImage.toDataURL('image/png');
+  var base64String = dataURL.substr("data:image/png;base64,".length);
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", 'https://192.168.6.81:5000/upload', true);
+  xhr.setRequestHeader("Content-Type", "image/png");
+
+  xhr.onreadystatechange = function() {
+    if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+      response = JSON.parse(xhr.response);
+      iter++;
+      if (iter % 5 == 0) {
+        if (response.length > 0) {
+          // responsiveVoice.speak(response[0]['name']);
+        }
+      }
+    }
+  }
+  xhr.send(base64String);
+}
+
+function handleError(error) {
+  console.error('Error: ', error);
+}
+</script>
+{% endblock %}
